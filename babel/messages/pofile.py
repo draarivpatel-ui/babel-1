@@ -465,7 +465,7 @@ def escape(string: str) -> str:
     ).replace('\n', '\\n').replace('"', '\\"')
 
 
-def normalize(string: str, prefix: str = '', width: int = 76) -> str:
+def normalize(string: str, prefix: str = '', width: int = 76, *, keyword: str = '') -> str:
     r"""Convert a string into a format that is appropriate for .po files.
 
     >>> print(normalize('''Say:
@@ -488,6 +488,10 @@ def normalize(string: str, prefix: str = '', width: int = 76) -> str:
     :param prefix: a string that should be prepended to every line
     :param width: the maximum line width; use `None`, 0, or a negative number
                   to completely disable line wrapping
+    :param keyword: the keyword (such as ``msgid`` or ``msgstr``) that will
+                    precede the string when written on a single line; its
+                    width and the separating space are counted when deciding
+                    whether the single-line form fits
     """
     if width and width > 0:
         prefixlen = len(prefix)
@@ -517,6 +521,19 @@ def normalize(string: str, prefix: str = '', width: int = 76) -> str:
         lines = string.splitlines(True)
 
     if len(lines) <= 1:
+        if (
+            keyword
+            and width
+            and width > 0
+            and len(escape(string)) + len(prefix) + len(keyword) + 1 > width
+            and len(WORD_SEP.split(string)) > 1
+        ):
+            # The string fits within the continuation-line width, but not on
+            # a single line once the keyword is counted, so use the
+            # multi-line form the way GNU gettext does. Strings without a
+            # word separator cannot be wrapped usefully and are emitted on
+            # a single line even when they exceed the width.
+            return '""\n' + prefix + escape(string)
         return escape(string)
 
     # Remove empty trailing line
@@ -666,37 +683,37 @@ def generate_po(
 
     def _format_conflict(message, conflicts: list[ConflictInfo], prefix=''):
         if message.context:
-            yield f"{prefix}msgctxt {normalize(message.context, prefix=prefix, width=width)}\n"
+            yield f"{prefix}msgctxt {normalize(message.context, prefix=prefix, width=width, keyword='msgctxt')}\n"
 
         if isinstance(message.id, (list, tuple)):
-            yield f"{prefix}msgid {normalize(message.id[0], prefix=prefix, width=width)}\n"
-            yield f"{prefix}msgid_plural {normalize(message.id[1], prefix=prefix, width=width)}\n"
+            yield f"{prefix}msgid {normalize(message.id[0], prefix=prefix, width=width, keyword='msgid')}\n"
+            yield f"{prefix}msgid_plural {normalize(message.id[1], prefix=prefix, width=width, keyword='msgid_plural')}\n"
             for idx in range(catalog.num_plurals):
                 string = _get_conflict_string(conflicts, plural_index=idx)
-                yield f"{prefix}msgstr[{idx:d}] {normalize(string, prefix=prefix, width=width)}\n"
+                yield f"{prefix}msgstr[{idx:d}] {normalize(string, prefix=prefix, width=width, keyword=f'msgstr[{idx:d}]')}\n"
         else:
-            yield f"{prefix}msgid {normalize(message.id, prefix=prefix, width=width)}\n"
+            yield f"{prefix}msgid {normalize(message.id, prefix=prefix, width=width, keyword='msgid')}\n"
             string = _get_conflict_string(conflicts)
-            yield f"{prefix}msgstr {normalize(string, prefix=prefix, width=width)}\n"
+            yield f"{prefix}msgstr {normalize(string, prefix=prefix, width=width, keyword='msgstr')}\n"
 
     def _format_message(message, prefix=''):
         if isinstance(message.id, (list, tuple)):
             if message.context:
-                yield f"{prefix}msgctxt {normalize(message.context, prefix=prefix, width=width)}\n"
-            yield f"{prefix}msgid {normalize(message.id[0], prefix=prefix, width=width)}\n"
-            yield f"{prefix}msgid_plural {normalize(message.id[1], prefix=prefix, width=width)}\n"
+                yield f"{prefix}msgctxt {normalize(message.context, prefix=prefix, width=width, keyword='msgctxt')}\n"
+            yield f"{prefix}msgid {normalize(message.id[0], prefix=prefix, width=width, keyword='msgid')}\n"
+            yield f"{prefix}msgid_plural {normalize(message.id[1], prefix=prefix, width=width, keyword='msgid_plural')}\n"
 
             for idx in range(catalog.num_plurals):
                 try:
                     string = message.string[idx]
                 except IndexError:
                     string = ''
-                yield f"{prefix}msgstr[{idx:d}] {normalize(string, prefix=prefix, width=width)}\n"
+                yield f"{prefix}msgstr[{idx:d}] {normalize(string, prefix=prefix, width=width, keyword=f'msgstr[{idx:d}]')}\n"
         else:
             if message.context:
-                yield f"{prefix}msgctxt {normalize(message.context, prefix=prefix, width=width)}\n"
-            yield f"{prefix}msgid {normalize(message.id, prefix=prefix, width=width)}\n"
-            yield f"{prefix}msgstr {normalize(message.string or '', prefix=prefix, width=width)}\n"
+                yield f"{prefix}msgctxt {normalize(message.context, prefix=prefix, width=width, keyword='msgctxt')}\n"
+            yield f"{prefix}msgid {normalize(message.id, prefix=prefix, width=width, keyword='msgid')}\n"
+            yield f"{prefix}msgstr {normalize(message.string or '', prefix=prefix, width=width, keyword='msgstr')}\n"
 
     for message in _sort_messages(catalog, sort_by=sort_by):
         if not message.id:  # This is the header "message"

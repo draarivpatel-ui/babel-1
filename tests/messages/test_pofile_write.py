@@ -48,6 +48,53 @@ msgid "foo"
 msgstr ""'''
 
 
+def test_wrap_single_line_msgstr_counts_keyword_width():
+    # regression test: a msgstr that fits the width on its own must still
+    # be wrapped when the line would exceed the width once the "msgstr "
+    # keyword is counted, matching GNU gettext behavior (#1266)
+    catalog = Catalog()
+    msgstr = ("Lorem Ipsum is simply dummy text of the printing and "
+              "typesetting industry. Lorem Ipsum has been the industrystandard")
+    catalog.add('Lorem Ipsum is', msgstr, locations=[('main.py', 1)])
+    buf = BytesIO()
+    pofile.write_po(buf, catalog, no_location=True, omit_header=True, width=120)
+    assert buf.getvalue().strip() == b'''msgid "Lorem Ipsum is"
+msgstr ""
+"Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industrystandard"'''
+
+
+def test_wrap_single_line_boundary_matches_gettext():
+    # at width 40, content of 31 characters plus quotes plus the "msgstr "
+    # keyword exactly reaches the limit and stays on one line, while 32
+    # characters wraps, as GNU msgcat does
+    catalog = Catalog()
+    catalog.add('x', 'a ' * 15 + 'a')  # 31 characters
+    buf = BytesIO()
+    pofile.write_po(buf, catalog, no_location=True, omit_header=True, width=40)
+    assert buf.getvalue().strip() == b'''msgid "x"
+msgstr "a a a a a a a a a a a a a a a a"'''
+
+    catalog = Catalog()
+    catalog.add('x', 'a ' * 15 + 'aa')  # 32 characters
+    buf = BytesIO()
+    pofile.write_po(buf, catalog, no_location=True, omit_header=True, width=40)
+    assert buf.getvalue().strip() == b'''msgid "x"
+msgstr ""
+"a a a a a a a a a a a a a a a aa"'''
+
+
+def test_unwrappable_single_word_stays_on_one_line():
+    # a string without word separators cannot be wrapped usefully, so it is
+    # emitted on a single line even when it exceeds the width, matching
+    # GNU gettext
+    catalog = Catalog()
+    catalog.add('x', 'a' * 32)
+    buf = BytesIO()
+    pofile.write_po(buf, catalog, no_location=True, omit_header=True, width=40)
+    assert buf.getvalue().strip() == b'''msgid "x"
+msgstr "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"'''
+
+
 def test_wrap_long_lines():
     text = """Here's some text where
 white space and line breaks matter, and should
